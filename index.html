@@ -9,83 +9,81 @@
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 20px; text-align: center; background-color: #f5f5f5; }
         #reader { width: 100%; max-width: 450px; margin: auto; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); background: white; }
-        .status-box { padding: 25px; margin: 15px 0; border: 3px solid #ccc; font-size: 1.4rem; border-radius: 15px; line-height: 1.5; background: white; min-height: 80px; display: flex; align-items: center; justify-content: center; flex-direction: column; }
-        .step-active { border-color: #2196F3; background-color: #f0f7ff; color: #0d47a1; font-weight: bold; }
+        .status-box { padding: 25px; margin: 15px 0; border: 3px solid #ccc; font-size: 1.4rem; border-radius: 15px; line-height: 1.5; background: white; min-height: 100px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: all 0.3s ease; }
+        
+        /* 단계별 색상 정의 */
+        .step-1 { border-color: #2196F3; background-color: #f0f7ff; color: #0d47a1; } /* 약품장 대기 */
+        .step-2 { border-color: #FFC107; background-color: #FFFDE7; color: #827717; } /* 약 스캔 대기 */
         .match { background-color: #4CAF50 !important; color: white !important; border-color: #2e7d32 !important; }
         .error { background-color: #f44336 !important; color: white !important; border-color: #c62828 !important; }
-        #medicine-name { font-size: 2.2rem; color: #ff5722; display: block; margin-top: 10px; font-weight: 900; background: #fff3e0; padding: 5px 15px; border-radius: 10px; }
-        h2 { color: #333; margin-bottom: 5px; }
-        .hint { font-size: 0.9rem; color: #666; margin-bottom: 15px; }
+        
+        #medicine-name { font-size: 2.2rem; color: #e64a19; display: block; margin-top: 10px; font-weight: 900; background: #fff; padding: 5px 15px; border-radius: 10px; border: 2px solid #FFC107; }
+        h2 { color: #333; margin: 5px 0; }
     </style>
 </head>
 <body>
 
     <h2>💊 약품 충진 체크</h2>
-    <div class="hint">Master.xlsx 파일을 읽어 자동으로 대조합니다.</div>
-    
     <div id="status" class="status-box">데이터를 불러오는 중...</div>
-    
     <div id="reader"></div>
 
     <script>
         let db = []; 
-        let currentStep = 1; // 1: 약품장 스캔, 2: 약품 스캔
+        let currentStep = 1; 
         let targetData = null;
         let html5QrCode = null;
 
-        // [1. 엑셀 로드 함수]
         async function loadExcel() {
             try {
                 const response = await fetch('Master.xlsx'); 
                 const arrayBuffer = await response.arrayBuffer();
                 const data = new Uint8Array(arrayBuffer);
                 const workbook = XLSX.read(data, {type: 'array'});
-                // 첫 번째 시트의 데이터를 가져옴
                 db = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-active");
+                updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-1");
             } catch (e) {
-                updateStatus("Master.xlsx 파일을 찾을 수 없습니다.<br>파일이 서버에 있는지 확인하세요.", "error");
+                updateStatus("Master.xlsx 파일을 찾을 수 없습니다.", "error");
             }
         }
 
-        // [2. 바코드 번호 추출 (01088 뒤 11자리)]
         function extractCode(rawText) {
             const key = "01088";
             const index = rawText.indexOf(key);
             if (index !== -1) {
-                // 01088 바로 다음부터 11글자만 잘라냄
                 return rawText.substring(index + key.length, index + key.length + 11);
             }
-            return rawText.trim(); // 없으면 그냥 공백제거 후 반환
+            return rawText.trim();
         }
 
-        // [3. 스캔 성공 시 실행되는 핵심 로직]
         function onScanSuccess(decodedText) {
-            // 중복 스캔 방지: 판독하는 동안 스캐너 일시 정지
+            // 스캔되자마자 즉시 정지
             html5QrCode.pause();
 
             if (currentStep === 1) {
-                // --- 1단계: 약품장 확인 ---
+                // --- 1단계: 약품장 인식 성공 ---
                 targetData = db.find(item => String(item.약품코드) === decodedText);
 
                 if (targetData) {
-                    const msg = `다음 약을 넣으세요:<br><span id="medicine-name">${targetData.약품명}</span>`;
-                    updateStatus(msg, "step-active");
-                    currentStep = 2;
-                    // 위치 확인 후 바로 다음 스캔 준비
-                    setTimeout(() => { html5QrCode.resume(); }, 500); 
+                    // 약 정보를 보여주며 '준비 상태'로 변경
+                    const msg = `[위치 확인 완료]<br>가져올 약: <span id="medicine-name">${targetData.약품명}</span><br>잠시 후 스캐너가 켜집니다...`;
+                    updateStatus(msg, "step-2");
+                    
+                    // 1.5초 대기 후 약품 스캔 모드로 전환
+                    setTimeout(() => {
+                        updateStatus(`[${targetData.약품명}]<br>약품 바코드를 찍으세요.`, "step-2");
+                        currentStep = 2;
+                        html5QrCode.resume(); // 이제 약 찍으라고 스캐너 켜줌
+                    }, 1500); 
                 } else {
                     updateStatus("등록되지 않은 약품장입니다.", "error");
                     setTimeout(() => { 
-                        updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-active");
+                        updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-1");
                         html5QrCode.resume(); 
                     }, 2000);
                 }
             } else if (currentStep === 2) {
                 // --- 2단계: 약품 대조 ---
                 const scannedCode = extractCode(decodedText);
-                
-                // 표준코드 1, 2, 3 중 하나라도 맞는지 체크
                 const isMatch = (
                     String(targetData.표준코드1) === scannedCode ||
                     String(targetData.표준코드2) === scannedCode ||
@@ -100,7 +98,6 @@
                     window.navigator.vibrate([200, 100, 200]);
                 }
 
-                // 결과 보여준 뒤 3초 후에 처음 상태로 리셋
                 setTimeout(() => {
                     resetStep();
                     html5QrCode.resume();
@@ -108,7 +105,6 @@
             }
         }
 
-        // 상태창 문구 및 디자인 변경 함수
         function updateStatus(msg, className) {
             const el = document.getElementById('status');
             el.innerHTML = msg;
@@ -118,13 +114,12 @@
         function resetStep() {
             currentStep = 1;
             targetData = null;
-            updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-active");
+            updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-1");
         }
 
-        // [4. 스캐너 및 엑셀 초기화 시작]
         window.onload = () => {
             html5QrCode = new Html5QrcodeScanner("reader", { 
-                fps: 10, // 스캔 속도를 약간 늦춰서 안정감 있게 조절
+                fps: 10, 
                 qrbox: { width: 280, height: 200 },
                 formatsToSupport: [ 
                     Html5QrcodeSupportedFormats.DATA_MATRIX, 
