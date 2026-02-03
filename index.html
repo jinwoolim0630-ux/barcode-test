@@ -17,16 +17,17 @@
         .error { background-color: #f44336 !important; color: white !important; border-color: #c62828 !important; }
         
         #medicine-name { font-size: 1.8rem; color: #e64a19; display: block; margin-top: 5px; font-weight: 900; background: #fff; padding: 5px 10px; border-radius: 10px; border: 2px solid #FFC107; }
-        .med-image { width: 100%; max-width: 250px; height: auto; margin-top: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); background-color: white; }
-        .reset-btn { margin-top: 15px; padding: 10px 20px; font-size: 1rem; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background: white; }
+        /* 이미지 스타일: 화면에 꽉 차게 혹은 적절한 크기로 조절 */
+        .med-image { width: 100%; max-width: 280px; height: auto; margin-top: 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); background-color: white; }
+        .reset-btn { margin-top: 15px; padding: 12px 24px; font-size: 1rem; cursor: pointer; border-radius: 8px; border: 1px solid #ccc; background: white; color: #333; }
     </style>
 </head>
 <body>
 
-    <h2>💊 약품 충진 체크 (Photo Ver.)</h2>
+    <h2>💊 약품 연속 충진 체크</h2>
     <div id="status" class="status-box">데이터 로딩 중...</div>
     <div id="reader"></div>
-    <button class="reset-btn" onclick="resetStep()">🔄 처음부터 (리셋)</button>
+    <button class="reset-btn" onclick="resetStep()">🔄 전체 리셋 (1단계로)</button>
 
     <script>
         let db = []; 
@@ -36,7 +37,6 @@
 
         async function loadExcel() {
             try {
-                // Master.xlsx 파일을 가져옵니다.
                 const response = await fetch('Master.xlsx'); 
                 const arrayBuffer = await response.arrayBuffer();
                 const data = new Uint8Array(arrayBuffer);
@@ -57,15 +57,14 @@
             return rawText.trim();
         }
 
-        // [이미지 포함 상태 업데이트 함수]
+        // [이미지 호출 경로 수정 완료: img/ 폴더 사용]
         function updateStatusWithImage(msg, className, medicineCode = null) {
             const el = document.getElementById('status');
             let imageHtml = "";
             
             if (medicineCode) {
-                // images 폴더 내의 약품코드.gif 파일을 불러옵니다.
-                // 이미지가 없을 경우(onerror) 아예 표시하지 않습니다.
-                imageHtml = `<img src="images/${medicineCode}.gif" class="med-image" onerror="this.style.display='none'">`;
+                // 폴더명을 img/ 로 변경하였습니다.
+                imageHtml = `<img src="img/${medicineCode}.gif" class="med-image" onerror="this.style.display='none'">`;
             }
             
             el.innerHTML = `${msg}${imageHtml}`;
@@ -75,7 +74,6 @@
         function onScanSuccess(decodedText, decodedResult) {
             html5QrCode.pause();
 
-            // Code39 형식은 약품장 바코드로 인식
             const isShelfBarcode = decodedResult.result.format.formatName === "CODE_39";
 
             if (isShelfBarcode) {
@@ -86,7 +84,7 @@
                     const msg = `[위치 확인]<br><span id="medicine-name">${targetData.약품명}</span>`;
                     updateStatusWithImage(msg, "step-2", targetData.약품코드);
                     
-                    setTimeout(() => { html5QrCode.resume(); }, 1500);
+                    setTimeout(() => { html5QrCode.resume(); }, 1200);
                 } else {
                     updateStatusWithImage("등록되지 않은 약품장입니다.", "error");
                     setTimeout(() => { resetStep(); html5QrCode.resume(); }, 2000);
@@ -94,7 +92,6 @@
                 return;
             }
 
-            // 2단계: 약품 대조
             if (currentStep === 2) {
                 const scannedCode = extractCode(decodedText);
                 const isMatch = (
