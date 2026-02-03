@@ -9,23 +9,24 @@
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 20px; text-align: center; background-color: #f5f5f5; }
         #reader { width: 100%; max-width: 450px; margin: auto; border-radius: 15px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); background: white; }
-        .status-box { padding: 25px; margin: 15px 0; border: 3px solid #ccc; font-size: 1.4rem; border-radius: 15px; line-height: 1.5; background: white; min-height: 120px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: all 0.2s ease; }
+        .status-box { padding: 20px; margin: 15px 0; border: 3px solid #ccc; font-size: 1.3rem; border-radius: 15px; line-height: 1.4; background: white; min-height: 150px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: all 0.2s ease; }
         
         .step-1 { border-color: #2196F3; background-color: #f0f7ff; color: #0d47a1; } 
         .step-2 { border-color: #FFC107; background-color: #FFFDE7; color: #827717; } 
         .match { background-color: #4CAF50 !important; color: white !important; border-color: #2e7d32 !important; }
         .error { background-color: #f44336 !important; color: white !important; border-color: #c62828 !important; }
         
-        #medicine-name { font-size: 2.2rem; color: #e64a19; display: block; margin-top: 10px; font-weight: 900; background: #fff; padding: 5px 15px; border-radius: 10px; border: 2px solid #FFC107; }
+        #medicine-name { font-size: 1.8rem; color: #e64a19; display: block; margin-top: 5px; font-weight: 900; background: #fff; padding: 5px 10px; border-radius: 10px; border: 2px solid #FFC107; }
+        .med-image { width: 100%; max-width: 250px; height: auto; margin-top: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); background-color: white; }
         .reset-btn { margin-top: 15px; padding: 10px 20px; font-size: 1rem; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background: white; }
     </style>
 </head>
 <body>
 
-    <h2>💊 약품 연속 충진 체크</h2>
+    <h2>💊 약품 충진 체크 (Photo Ver.)</h2>
     <div id="status" class="status-box">데이터 로딩 중...</div>
     <div id="reader"></div>
-    <button class="reset-btn" onclick="resetStep()">처음부터 다시 시작 (강제 리셋)</button>
+    <button class="reset-btn" onclick="resetStep()">🔄 처음부터 (리셋)</button>
 
     <script>
         let db = []; 
@@ -35,12 +36,13 @@
 
         async function loadExcel() {
             try {
+                // Master.xlsx 파일을 가져옵니다.
                 const response = await fetch('Master.xlsx'); 
                 const arrayBuffer = await response.arrayBuffer();
                 const data = new Uint8Array(arrayBuffer);
                 const workbook = XLSX.read(data, {type: 'array'});
                 db = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-1");
+                updateStatus("1단계: 약품장 바코드(Code39)를 찍으세요.", "step-1");
             } catch (e) {
                 updateStatus("Master.xlsx 파일을 찾을 수 없습니다.", "error");
             }
@@ -55,28 +57,44 @@
             return rawText.trim();
         }
 
+        // [이미지 포함 상태 업데이트 함수]
+        function updateStatusWithImage(msg, className, medicineCode = null) {
+            const el = document.getElementById('status');
+            let imageHtml = "";
+            
+            if (medicineCode) {
+                // images 폴더 내의 약품코드.gif 파일을 불러옵니다.
+                // 이미지가 없을 경우(onerror) 아예 표시하지 않습니다.
+                imageHtml = `<img src="images/${medicineCode}.gif" class="med-image" onerror="this.style.display='none'">`;
+            }
+            
+            el.innerHTML = `${msg}${imageHtml}`;
+            el.className = "status-box " + className;
+        }
+
         function onScanSuccess(decodedText, decodedResult) {
             html5QrCode.pause();
 
-            // [특수 로직] 스캔된 바코드 형식이 CODE_39(약품장)이면 무조건 1단계로 취급
+            // Code39 형식은 약품장 바코드로 인식
             const isShelfBarcode = decodedResult.result.format.formatName === "CODE_39";
 
             if (isShelfBarcode) {
-                // 어떤 단계에서든 약품장을 찍으면 그 약품장으로 타겟 변경
                 const found = db.find(item => String(item.약품코드) === decodedText);
                 if (found) {
                     targetData = found;
                     currentStep = 2;
-                    updateStatus(`[위치 변경 완료]<br>가져올 약: <span id="medicine-name">${targetData.약품명}</span>`, "step-2");
+                    const msg = `[위치 확인]<br><span id="medicine-name">${targetData.약품명}</span>`;
+                    updateStatusWithImage(msg, "step-2", targetData.약품코드);
+                    
                     setTimeout(() => { html5QrCode.resume(); }, 1500);
                 } else {
-                    updateStatus("등록되지 않은 약품장입니다.", "error");
+                    updateStatusWithImage("등록되지 않은 약품장입니다.", "error");
                     setTimeout(() => { resetStep(); html5QrCode.resume(); }, 2000);
                 }
                 return;
             }
 
-            // 2단계: 약품 대조 (연속 스캔 모드)
+            // 2단계: 약품 대조
             if (currentStep === 2) {
                 const scannedCode = extractCode(decodedText);
                 const isMatch = (
@@ -86,21 +104,20 @@
                 );
 
                 if (isMatch) {
-                    updateStatus(`✅ 일치!<br>${targetData.약품명}`, "match");
+                    updateStatusWithImage(`✅ 일치합니다!<br>${targetData.약품명}`, "match", targetData.약품코드);
                     window.navigator.vibrate(100);
                 } else {
-                    updateStatus(`❌ 불일치!<br>다른 약입니다.`, "error");
+                    updateStatusWithImage(`❌ 불일치! 다른 약입니다.`, "error", targetData.약품코드);
                     window.navigator.vibrate([200, 100, 200]);
                 }
 
-                // 결과 보여준 후, 1.5초 뒤에 다시 2단계 스캔 상태로 자동 복귀
                 setTimeout(() => {
-                    updateStatus(`[연속 스캔 모드]<br><span id="medicine-name">${targetData.약품명}</span><br>다음 약을 찍으세요.`, "step-2");
+                    const msg = `[연속 스캔 모드]<br><span id="medicine-name">${targetData.약품명}</span><br>다음 약을 찍으세요.`;
+                    updateStatusWithImage(msg, "step-2", targetData.약품코드);
                     html5QrCode.resume();
                 }, 1500);
             } else {
-                // 1단계 상태에서 Code39가 아닌 것을 찍었을 때
-                updateStatus("먼저 약품장 바코드(Code39)부터 찍으세요.", "error");
+                updateStatusWithImage("먼저 약품장 바코드부터 찍으세요.", "error");
                 setTimeout(() => { html5QrCode.resume(); }, 1500);
             }
         }
@@ -114,7 +131,7 @@
         function resetStep() {
             currentStep = 1;
             targetData = null;
-            updateStatus("1단계: 약품장 바코드를 찍으세요.", "step-1");
+            updateStatus("1단계: 약품장 바코드(Code39)를 찍으세요.", "step-1");
             if(html5QrCode) html5QrCode.resume();
         }
 
