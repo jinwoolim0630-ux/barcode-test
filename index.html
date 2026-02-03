@@ -3,50 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>약품 바코드 스캐너 테스트</title>
+    <title>약품 크로스체크</title>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; }
-        #reader { width: 100%; max-width: 500px; margin: 0 auto; }
-        #result { margin-top: 20px; padding: 15px; border: 2px solid #ddd; font-size: 1.2rem; word-break: break-all; }
-        .success { border-color: #4CAF50 !important; background-color: #e8f5e9; }
+        body { font-family: sans-serif; margin: 0; padding: 20px; text-align: center; }
+        #reader { width: 100%; max-width: 450px; margin: auto; border-radius: 15px; overflow: hidden; }
+        .status-box { padding: 25px; margin: 15px 0; border: 3px solid #ccc; font-size: 1.4rem; border-radius: 15px; line-height: 1.5; }
+        .step-active { border-color: #2196F3; background-color: #f0f7ff; color: #0d47a1; }
+        .match { background-color: #4CAF50; color: white; border-color: #2e7d32; }
+        .error { background-color: #f44336; color: white; border-color: #c62828; }
+        #medicine-name { font-size: 2rem; color: #ff5722; display: block; margin-top: 10px; font-weight: 900; }
     </style>
 </head>
 <body>
-    <h2>바코드 스캔 테스트</h2>
+
+    <h2>💊 약품 충진 체크</h2>
+    
+    <div id="status" class="status-box">데이터를 불러오는 중...</div>
+    
     <div id="reader"></div>
-    <div id="result">여기에 스캔 결과가 표시됩니다.</div>
 
     <script>
-        function onScanSuccess(decodedText, decodedResult) {
-            // 스캔 성공 시 처리
-            const resultElement = document.getElementById('result');
-            resultElement.innerText = `스캔 성공: ${decodedText}`;
-            resultElement.classList.add('success');
-            
-            console.log(`Code matched = ${decodedText}`, decodedResult);
-            
-            // 필요하다면 여기서 진동이나 소리 추가 가능
-            window.navigator.vibrate(100); 
+        let db = []; 
+        let currentStep = 1; // 1: 약품장(위치) 스캔, 2: 약품 스캔
+        let targetData = null;
+
+        // [서버에서 엑셀 로드]
+        async function loadExcel() {
+            try {
+                const response = await fetch('Master.xlsx'); // 파일명을 Master.xlsx로 맞춰주세요.
+                const arrayBuffer = await response.arrayBuffer();
+                const data = new Uint8Array(arrayBuffer);
+                const workbook = XLSX.read(data, {type: 'array'});
+                db = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                document.getElementById('status').innerText = "1단계: 약품장 바코드를 찍으세요.";
+                document.getElementById('status').className = "status-box step-active";
+            } catch (e) {
+                document.getElementById('status').innerText = "Master.xlsx 파일을 찾을 수 없습니다.";
+            }
+        }
+        loadExcel();
+
+        // [데이터 매트릭스 번호 추출기]
+        function extractCode(rawText) {
+            // "01088" 위치를 찾고 그 뒤의 11자리를 가져옴
+            const key = "01088";
+            const index = rawText.indexOf(key);
+            if (index !== -1) {
+                return rawText.substring(index + key.length, index + key.length + 11);
+            }
+            return rawText; // 01088이 없으면 그냥 원본 반환 (Code39 대비)
         }
 
-        function onScanFailure(error) {
-            // 스캔 실패(바코드가 화면에 없거나 흐릴 때)는 로그를 찍지 않는 것이 성능에 좋음
+        function onScanSuccess(decodedText) {
+            if (db.length === 0) return;
+
+            if (currentStep === 1) {
+                // 1단계: 약품장 스캔 (약품코드 컬럼과 비교)
+                targetData = db.find(item => String(item.약품코드) === decodedText);
+
+                if (targetData) {
+                    document.getElementById('status').innerHTML = 
+                        `다음 약을 넣으세요:<br><span id="medicine-name">${targetData.약품명}</span>`;
+                    currentStep = 2;
+                } else {
+                    showResult("등록되지 않은 약품장입니다.", "error");
+                }
+            } else if (currentStep === 2) {
+                // 2단계: 약품 스캔 및 비교
+                const scannedCode = extractCode(decodedText);
+                
+                // 표준코드 1, 2, 3 중 하나라도 일치하는지 확인
+                const isMatch = (
+                    String(targetData.표준코드1) === scannedCode ||
+                    String(targetData.표준코드2) === scannedCode ||
+                    String(targetData.표준코드3) === scannedCode
+                );
+
+                if (isMatch) {
+                    showResult(`✅ 일치!<br>${targetData.약품명}`, "match");
+                } else {
+                    showResult(`❌ 불일치!<br>다른 약입니다.`, "error");
+                }
+                setTimeout(resetStep, 3000);
+            }
         }
 
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", 
-            { 
-                fps: 10, 
-                qrbox: {width: 250, height: 250},
-                // Data Matrix와 Code 39를 모두 인식하도록 설정
-                formatsToSupport: [ 
-                    Html5QrcodeSupportedFormats.DATA_MATRIX, 
-                    Html5QrcodeSupportedFormats.CODE_39 
-                ]
-            },
-            /* verbose= */ false);
-        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        function showResult(msg, className) {
+            const el = document.getElementById('status');
+            el.innerHTML = msg;
+            el.className = "status-box " + className;
+            if (className === 'error') window.navigator.vibrate([200, 100, 200]);
+        }
+
+        function resetStep() {
+            currentStep = 1;
+            targetData = null;
+            document.getElementById('status').innerText = "1단계: 약품장 바코드를 찍으세요.";
+            document.getElementById('status').className = "status-box step-active";
+        }
+
+        const scanner = new Html5QrcodeScanner("reader", { 
+            fps: 20, qrbox: 280,
+            formatsToSupport: [ 
+                Html5QrcodeSupportedFormats.DATA_MATRIX, 
+                Html5QrcodeSupportedFormats.CODE_39 
+            ]
+        });
+        scanner.render(onScanSuccess);
     </script>
 </body>
 </html>
