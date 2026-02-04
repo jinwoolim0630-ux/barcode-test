@@ -133,17 +133,29 @@
         }
 
         window.onload = () => {
-            html5QrCode = new Html5QrcodeScanner("reader", { 
-                fps: 15, 
-                qrbox: { width: 280, height: 200 },
-                formatsToSupport: [ 
-                    Html5QrcodeSupportedFormats.DATA_MATRIX, 
-                    Html5QrcodeSupportedFormats.CODE_39 
-                ]
-            });
-            html5QrCode.render(onScanSuccess);
-            loadExcel();
-        };
+    // 스캐너 설정 보강
+    html5QrCode = new Html5QrcodeScanner("reader", { 
+        fps: 20, // 인식 속도 향상을 위해 fps 소폭 상승
+        qrbox: { width: 280, height: 200 },
+        aspectRatio: 1.0,
+        // [핵심] 반전 바코드 및 다양한 환경 대응을 위한 실험적 기능 활성화
+        experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true 
+        },
+        // [보강] 고해상도 설정을 통해 반전 바코드의 미세한 점들을 더 선명하게 포착
+        videoConstraints: {
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 },
+            facingMode: "environment"
+        },
+        // 데이터 매트릭스 인식을 더 정교하게 설정
+        rememberLastUsedCamera: true
+    });
+
+    html5QrCode.render(onScanSuccess);
+    loadExcel();
+};
     </script>
 </body>
 </html>
+
